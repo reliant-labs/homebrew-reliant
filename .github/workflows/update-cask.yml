@@ -1,0 +1,95 @@
+name: Update Cask
+
+on:
+  # Trigger via repository dispatch from main reliant repo
+  repository_dispatch:
+    types: [release-published]
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update to (e.g., 0.2.5)'
+        required: false
+        type: string
+
+jobs:
+  update-cask:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ -n "${{ github.event.client_payload.version }}" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
+          else
+            # Fetch from latest-mac.yml
+            VERSION=$(curl -s https://downloads.reliantlabs.io/latest-mac.yml | grep 'version:' | head -1 | awk '{print $2}')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Updating to version: $VERSION"
+
+      - name: Download and calculate SHA256
+        id: sha256
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          echo "Downloading arm64 DMG..."
+          curl -sL "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-arm64.dmg" -o arm64.dmg
+          SHA_ARM64=$(shasum -a 256 arm64.dmg | awk '{print $1}')
+          echo "arm64 SHA256: $SHA_ARM64"
+          
+          echo "Downloading x64 DMG..."
+          curl -sL "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-x64.dmg" -o x64.dmg
+          SHA_X64=$(shasum -a 256 x64.dmg | awk '{print $1}')
+          echo "x64 SHA256: $SHA_X64"
+          
+          echo "sha_arm64=$SHA_ARM64" >> $GITHUB_OUTPUT
+          echo "sha_x64=$SHA_X64" >> $GITHUB_OUTPUT
+
+      - name: Update cask file
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA_ARM64="${{ steps.sha256.outputs.sha_arm64 }}"
+          SHA_X64="${{ steps.sha256.outputs.sha_x64 }}"
+          
+          # Update version
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/reliant.rb
+          
+          # Update SHA256 for arm64
+          sed -i '' "s/sha256 arm:   \".*\"/sha256 arm:   \"${SHA_ARM64}\"/" Casks/reliant.rb
+          
+          # Update SHA256 for intel
+          sed -i '' "s/intel: \".*\"/intel: \"${SHA_X64}\"/" Casks/reliant.rb
+          
+          echo "Updated cask file:"
+          cat Casks/reliant.rb
+
+      - name: Verify cask
+        run: |
+          brew tap --force homebrew/cask
+          brew audit --cask Casks/reliant.rb || true
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Update Reliant to ${{ steps.version.outputs.version }}"
+          title: "Update Reliant to ${{ steps.version.outputs.version }}"
+          body: |
+            Automated update of Reliant cask to version ${{ steps.version.outputs.version }}.
+            
+            **Checksums:**
+            - arm64: `${{ steps.sha256.outputs.sha_arm64 }}`
+            - x64: `${{ steps.sha256.outputs.sha_x64 }}`
+            
+            **Download URLs:**
+            - [arm64 DMG](https://downloads.reliantlabs.io/Reliant-${{ steps.version.outputs.version }}-mac-arm64.dmg)
+            - [x64 DMG](https://downloads.reliantlabs.io/Reliant-${{ steps.version.outputs.version }}-mac-x64.dmg)
+          branch: update-reliant-${{ steps.version.outputs.version }}
+          delete-branch: true
