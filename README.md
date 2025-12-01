@@ -1,6 +1,6 @@
 # Homebrew Tap for Reliant
 
-This is the official [Homebrew](https://brew.sh/) tap for [Reliant](https://reliantlabs.com/), the AI-powered coding assistant.
+This is the official [Homebrew](https://brew.sh/) tap for [Reliant](https://reliantlabs.io/), the AI-powered coding assistant.
 
 ## Installation
 
@@ -38,7 +38,7 @@ Reliant is an AI-powered coding assistant with intelligent agents for profession
 - Intelligent code analysis and suggestions
 - Seamless integration with your development environment
 
-Learn more at [reliantlabs.com](https://reliantlabs.com/).
+Learn more at [reliantlabs.com](https://reliantlabs.io/).
 
 ## Issues
 
