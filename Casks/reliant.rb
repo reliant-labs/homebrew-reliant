@@ -9,7 +9,7 @@ cask "reliant" do
       verified: "downloads.reliantlabs.io/"
   name "Reliant"
   desc "AI-powered coding assistant with intelligent agents"
-  homepage "https://reliantlabs.com/"
+  homepage "https://reliantlabs.io/"
 
   livecheck do
     url "https://downloads.reliantlabs.io/latest-mac.yml"
