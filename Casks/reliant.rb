@@ -5,7 +5,8 @@ cask "reliant" do
   sha256 arm:   "1bfbb17c6ee5a5e414356249375503244cd1d759c1c9ed528412067ba6c9dc03",
          intel: "fcea6df29d88b238032d9cf46855b4a936719722cd308f84aa16cdf41797706f"
 
-  url "https://downloads.reliantlabs.io/Reliant-#{version}-mac-#{arch}.dmg"
+  url "https://downloads.reliantlabs.io/Reliant-#{version}-mac-#{arch}.dmg",
+      verified: "downloads.reliantlabs.io/"
   name "Reliant"
   desc "AI-powered coding assistant with intelligent agents"
   homepage "https://reliantlabs.com/"
