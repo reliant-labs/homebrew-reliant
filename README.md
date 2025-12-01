@@ -38,7 +38,7 @@ Reliant is an AI-powered coding assistant with intelligent agents for profession
 - Intelligent code analysis and suggestions
 - Seamless integration with your development environment
 
-Learn more at [reliantlabs.com](https://reliantlabs.io/).
+Learn more at [reliantlabs.io](https://reliantlabs.io/).
 
 ## Issues
 
