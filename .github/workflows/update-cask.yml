@@ -52,14 +52,35 @@ jobs:
         id: sha256
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          
+          # Download with retry, timeout, and progress
+          download_with_retry() {
+            local url="$1"
+            local output="$2"
+            local max_attempts=3
+            local attempt=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              echo "Downloading $output (attempt $attempt/$max_attempts)..."
+              if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 600 \
+                   --progress-bar "$url" -o "$output"; then
+                echo "Download successful!"
+                return 0
+              fi
+              echo "Download failed, retrying..."
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+            
+            echo "Download failed after $max_attempts attempts"
+            return 1
+          }
 
-          echo "Downloading arm64 DMG..."
-          curl -sL "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-arm64.dmg" -o arm64.dmg
+          download_with_retry "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-arm64.dmg" "arm64.dmg"
           SHA_ARM64=$(shasum -a 256 arm64.dmg | awk '{print $1}')
           echo "arm64 SHA256: $SHA_ARM64"
 
-          echo "Downloading x64 DMG..."
-          curl -sL "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-x64.dmg" -o x64.dmg
+          download_with_retry "https://downloads.reliantlabs.io/Reliant-${VERSION}-mac-x64.dmg" "x64.dmg"
           SHA_X64=$(shasum -a 256 x64.dmg | awk '{print $1}')
           echo "x64 SHA256: $SHA_X64"
 
