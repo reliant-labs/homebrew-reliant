@@ -1,5 +1,5 @@
 cask "reliant" do
-  arch arm: "arm64", intel: "cb4b9de7b42ab2e4e0ef6f23af4b09d288ad131a20535f55f88a8a8ed9df1d06"
+  arch arm: "arm64", intel: "x64"
 
   version "1.4.0"
   sha256 arm:   "26203d9d85cad1ee253c6e450300565bb47ab0c5929884ba633c56d3263aedae",
@@ -19,6 +19,8 @@ cask "reliant" do
   depends_on macos: ">= :monterey"
 
   app "Reliant.app"
+
+  binary "Reliant.app/Contents/Resources/server/mac-#{arch}/reliant-backend", target: "reliant"
 
   uninstall quit: "com.reliantlabs.reliant"
 
