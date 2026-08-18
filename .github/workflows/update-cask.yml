@@ -103,8 +103,16 @@ jobs:
           # Update SHA256 for arm64
           sed -i '' "s/sha256 arm:   \".*\"/sha256 arm:   \"${SHA_ARM64}\"/" Casks/reliant.rb
 
-          # Update SHA256 for intel
-          sed -i '' "s/intel: \".*\"/intel: \"${SHA_X64}\"/" Casks/reliant.rb
+          # Update SHA256 for intel.
+          #
+          # Anchored to the continuation line of the sha256 stanza, NOT a bare
+          # `intel: "..."`. The cask opens with
+          #     arch arm: "arm64", intel: "x64"
+          # which the unanchored pattern matched FIRST, replacing the arch
+          # mapping with a checksum and producing
+          #     arch arm: "arm64", intel: "<sha>"
+          # That is what every previous auto-update PR shipped (see #17-#19).
+          sed -i '' "s/^\( *\)intel: \".*\"/\1intel: \"${SHA_X64}\"/" Casks/reliant.rb
 
           echo "Updated cask file:"
           cat Casks/reliant.rb
