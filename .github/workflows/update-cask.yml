@@ -104,7 +104,13 @@ jobs:
           sed -i '' "s/sha256 arm:   \".*\"/sha256 arm:   \"${SHA_ARM64}\"/" Casks/reliant.rb
 
           # Update SHA256 for intel
-          sed -i '' "s/intel: \".*\"/intel: \"${SHA_X64}\"/" Casks/reliant.rb
+          # Anchored to the indented continuation line of the sha256 stanza.
+          # A bare `intel: "..."` also matches the cask's opening
+          #     arch arm: "arm64", intel: "x64"
+          # which sed rewrites first, turning the arch mapping into a checksum
+          # and producing an installable-looking but broken cask. Every
+          # auto-update PR from #15 to #26 shipped that corruption.
+          sed -i '' "s/^\( *\)intel: \".*\"/\1intel: \"${SHA_X64}\"/" Casks/reliant.rb
 
           echo "Updated cask file:"
           cat Casks/reliant.rb
