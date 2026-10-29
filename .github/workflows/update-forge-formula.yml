@@ -1,0 +1,74 @@
+name: Update forge formula
+
+# forge's scripts/release-forge.sh dispatches `forge-release-published` with
+# client_payload.version once a release's GitHub assets exist. The formula is
+# rendered by forge's own scripts/render-homebrew-formula.sh at that release's
+# tag, from the release's checksums.txt, so the archive names and the formula
+# can never disagree.
+on:
+  repository_dispatch:
+    types: [forge-release-published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "forge version (e.g. 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-forge-formula
+  cancel-in-progress: false
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || github.event.client_payload.version }}
+        run: |
+          VERSION="${INPUT_VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be X.Y.Z (prereleases are not published to Homebrew), got '$INPUT_VERSION'"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Render Formula/forge.rb
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          base="https://github.com/reliant-labs/forge"
+          curl -fsSL --retry 5 --retry-delay 10 "$base/releases/download/v$VERSION/checksums.txt" -o checksums.txt
+          curl -fsSL --retry 5 --retry-delay 10 \
+            "https://raw.githubusercontent.com/reliant-labs/forge/v$VERSION/scripts/render-homebrew-formula.sh" -o render.sh
+          mkdir -p Formula
+          bash render.sh "$VERSION" checksums.txt > Formula/forge.rb
+          rm -f checksums.txt render.sh
+          cat Formula/forge.rb
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git diff --quiet -- Formula/forge.rb && git ls-files --error-unmatch Formula/forge.rb >/dev/null 2>&1; then
+            echo "Formula/forge.rb is already at $VERSION"
+            exit 0
+          fi
+          BRANCH="update-forge-$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add Formula/forge.rb
+          git commit -m "Update forge to $VERSION"
+          git push -u origin "$BRANCH"
+          gh pr create --base main --title "Update forge to $VERSION" \
+            --body "Automated update of Formula/forge.rb to forge v$VERSION, rendered by forge's scripts/render-homebrew-formula.sh from the release's checksums.txt."
