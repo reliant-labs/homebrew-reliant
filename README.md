@@ -18,6 +18,17 @@ Or install directly with a single command:
 brew install --cask reliant-labs/reliant/reliant
 ```
 
+## forge
+
+[forge](https://github.com/reliant-labs/forge), Reliant's framework for building and shipping apps, installs from this tap as a formula:
+
+```bash
+brew install reliant-labs/reliant/forge
+forge version
+```
+
+`Formula/forge.rb` is rendered from each forge release's `checksums.txt` by the `Update forge formula` workflow.
+
 ## Updating
 
 ```bash
