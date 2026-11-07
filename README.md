@@ -29,6 +29,29 @@ forge version
 
 `Formula/forge.rb` is rendered from each forge release's `checksums.txt` by the `Update forge formula` workflow.
 
+## Automation
+
+Every release lands here without a human step, and a stall is loud:
+
+| Package | Workflow | Triggered by | Gate before it reaches `main` |
+|---|---|---|---|
+| `Formula/forge.rb` | `update-forge-formula.yml` | forge's release script (`forge-release-published`), and every 30 minutes | The release's archives and `checksums.txt` verify against forge's Sigstore release signature; the formula's every url/sha256 matches the signed `checksums.txt`; `brew install` + `brew test` + `forge version` on macOS and Linux |
+| `Casks/reliant.rb` | `update-cask.yml` | reliant's release workflow (`release-published`), and every 30 minutes | Both DMGs' sha512 match the release's `latest-mac.yml`; the cask keeps its exact shape; `brew install --cask` on macOS reports the version |
+
+A bump that passes its gate is pushed straight to `main` by the tap's deploy
+key (`HOMEBREW_TAP_DEPLOY_KEY`), the only identity the `main` ruleset lets skip
+its review, and only for that one file. The `main: history` ruleset, which the
+key does not bypass, still forbids force pushes and deletion. Every other
+change to this repository needs an approving review, as before.
+
+If the tap stays behind the latest release for more than 3 hours, the
+workflow's `staleness` job fails and opens the issue "forge on Homebrew is
+behind its latest release" (or "Reliant on ..."), and closes it once caught up.
+
+Setting up or rotating the key is one command for a repository admin:
+`scripts/setup-automation.sh` (`--dry-run` first to see the changes). Without
+the key, bumps fall back to a pull request that needs an approval.
+
 ## Updating
 
 ```bash

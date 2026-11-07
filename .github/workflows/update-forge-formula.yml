@@ -1,15 +1,32 @@
-# SOURCE OF TRUTH for reliant-labs/homebrew-reliant/.github/workflows/update-forge-formula.yml.
+# Publishes Formula/forge.rb for every forge release, with no human step.
 #
-# It lives in forge so it changes with scripts/render-homebrew-formula.sh and
-# scripts/build-release-assets.sh, whose output it consumes. Copy it into the tap
-# (the tap is a separate repository, so this pull request cannot install it):
+# TRIGGERS. forge's scripts/release-forge.sh dispatches "forge-release-published"
+# the moment a release is created. The schedule is the safety net: every 30
+# minutes it compares this tap with forge's latest release and publishes
+# whatever a lost dispatch missed. A bump therefore never waits on a person.
 #
-#   gh api repos/reliant-labs/homebrew-reliant/contents/.github/workflows/update-forge-formula.yml  # check first
-#   cp docs/installers/update-forge-formula.yml <tap>/.github/workflows/
+# THE GATE (what a human reviewer used to check), in order:
+#   1. render-forge-formula.sh: the release's archives and checksums.txt verify
+#      against forge's Sigstore release signature (release-attest.yml, the
+#      identity install.sh and the npm shim pin); every archive matches
+#      checksums.txt; the formula is rendered by the tag's own
+#      scripts/render-homebrew-formula.sh and every url/sha256 in it is
+#      re-checked against the signed checksums.txt;
+#   2. brew-verify.sh on macOS (arm64) and Linux (amd64): `brew install`,
+#      `brew test`, and the installed `forge version` must name the release;
+#   3. both legs must render a byte-identical formula.
+# Only then does publish.sh push the one-file change to main, as the tap's
+# deploy key (the only bypass of the "main" ruleset's review). Never a
+# downgrade, never a prerelease.
 #
-# Triggered by scripts/release-forge.sh ("forge-release-published"), or by hand
-# with a version. Opens a PR against the tap's main; like the Reliant cask PR, the
-# tap's ruleset requires a human approval, so the formula bump is not self-merging.
+# THE ALARM. The `staleness` job runs after every trigger: if the tap installs an
+# older forge than the latest release for more than STALE_AFTER_HOURS, it fails
+# and opens (or updates) the issue "forge on Homebrew is behind its latest
+# release"; catching up closes it.
+#
+# BY HAND. Re-publish a version: `gh workflow run update-forge-formula.yml
+# --repo reliant-labs/homebrew-reliant -f version=X.Y.Z`. Verify without
+# publishing: add `-f dry_run=true`.
 name: Update forge formula
 
 on:
@@ -18,101 +35,143 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "forge version to update to (e.g., 0.1.46)"
-        required: true
+        description: "forge version (X.Y.Z); empty means the latest release"
+        required: false
         type: string
+      dry_run:
+        description: "Verify only: run the whole gate for the version, publish nothing"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "7,37 * * * *"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
-# Two dispatches (a release and a hand re-run) must not race on one branch.
+# A dispatch and a scheduled run must not race; the second finds main current.
 concurrency:
   group: update-forge-formula
   cancel-in-progress: false
 
-jobs:
-  update-formula:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+env:
+  STALE_AFTER_HOURS: "3"
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
 
-      - name: Resolve version
-        id: version
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      update: ${{ steps.resolve.outputs.update }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the version to publish
+        id: resolve
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
           PAYLOAD_VERSION: ${{ github.event.client_payload.version }}
         run: |
-          VERSION="${INPUT_VERSION:-$PAYLOAD_VERSION}"
+          latest="$(gh api repos/reliant-labs/forge/releases/latest --jq .tag_name)"
+          VERSION="${INPUT_VERSION:-${PAYLOAD_VERSION:-$latest}}"
           VERSION="${VERSION#v}"
           if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::version must look like X.Y.Z (got: '$VERSION'); prereleases are not published to Homebrew"
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          HAVE="$(.github/scripts/tap-version.sh formula || true)"
+          echo "tap installs forge ${HAVE:-nothing}; latest release ${latest}; requested ${VERSION}"
+          update=true
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::dry run: verifying forge $VERSION; nothing will be published"
+          elif [ "$HAVE" = "$VERSION" ]; then
+            echo "Formula/forge.rb already installs $VERSION; nothing to do"
+            update=false
+          elif [ -n "$HAVE" ] && [ "$(printf '%s\n%s\n' "$HAVE" "$VERSION" | sort -V | tail -n1)" = "$HAVE" ]; then
+            echo "::notice::not downgrading Formula/forge.rb from $HAVE to $VERSION"
+            update=false
+          fi
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "update=$update" >>"$GITHUB_OUTPUT"
 
-      - name: Render Formula/forge.rb
+  verify-macos:
+    needs: resolve
+    if: needs.resolve.outputs.update == 'true'
+    runs-on: macos-latest
+    outputs:
+      formula_sha256: ${{ steps.render.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Render Formula/forge.rb from the signed release
+        id: render
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          # Fetch the renderer from the forge tag being released, so the formula
-          # always matches that release's asset names.
-          curl -fsSL --retry 3 -o render.sh \
-            "https://raw.githubusercontent.com/reliant-labs/forge/v${VERSION}/scripts/render-homebrew-formula.sh"
-          curl -fsSL --retry 3 -o checksums.txt \
-            "https://github.com/reliant-labs/forge/releases/download/v${VERSION}/checksums.txt"
-          mkdir -p Formula
-          bash render.sh "$VERSION" checksums.txt > Formula/forge.rb
-          rm render.sh checksums.txt
+          .github/scripts/render-forge-formula.sh "$VERSION" Formula/forge.rb
           cat Formula/forge.rb
+          echo "sha256=$(shasum -a 256 Formula/forge.rb | awk '{print $1}')" >>"$GITHUB_OUTPUT"
 
-      - name: Install, test and audit the rendered formula
-        run: |
-          # ubuntu-latest ships Homebrew but does NOT put it on PATH: without
-          # this, `brew` is "command not found" and no formula PR ever opens.
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1
-          # Tap this checkout, then overlay the freshly rendered formula: the
-          # clone `brew tap` makes holds only what is committed, and
-          # Formula/forge.rb is not committed until the step below.
-          brew tap reliant-labs/reliant "$GITHUB_WORKSPACE"
-          TAP_DIR="$(brew --repository reliant-labs/reliant)"
-          mkdir -p "$TAP_DIR/Formula"
-          cp Formula/forge.rb "$TAP_DIR/Formula/forge.rb"
-          # Homebrew 7 refuses to load a formula from a tap nobody trusted;
-          # an older brew has no `trust` command and no such check.
-          brew trust --formula reliant-labs/reliant/forge 2>/dev/null || true
-          # The gate: a formula that cannot install the release's linux
-          # archive and pass its own `forge version` test never reaches a PR.
-          brew install --formula reliant-labs/reliant/forge
-          brew test reliant-labs/reliant/forge
-          # Advisory: a style finding is not a reason to withhold a release
-          # (the renderer at an older tag may predate an audit fix).
-          brew audit --strict --online --formula reliant-labs/reliant/forge ||
-            echo "::warning::brew audit --strict reported problems in Formula/forge.rb (see above)"
+      - name: brew install and brew test (macOS)
+        run: .github/scripts/brew-verify.sh formula "${{ needs.resolve.outputs.version }}"
 
-      - name: Open pull request
+  publish:
+    needs: [resolve, verify-macos]
+    if: needs.resolve.outputs.update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The deploy key is the only identity the "main" ruleset lets push
+          # without a review. Unset, checkout falls back to GITHUB_TOKEN and
+          # publish.sh opens a pull request instead.
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+
+      - name: Render Formula/forge.rb from the signed release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          MACOS_SHA256: ${{ needs.verify-macos.outputs.formula_sha256 }}
         run: |
-          BRANCH="update-forge-${VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- Formula/forge.rb && git ls-files --error-unmatch Formula/forge.rb >/dev/null 2>&1; then
-            echo "Formula/forge.rb already at ${VERSION}; nothing to do"
-            exit 0
+          .github/scripts/render-forge-formula.sh "$VERSION" Formula/forge.rb
+          cat Formula/forge.rb
+          got="$(sha256sum Formula/forge.rb | awk '{print $1}')"
+          if [ "$got" != "$MACOS_SHA256" ]; then
+            echo "::error::the Linux leg rendered a different formula ($got) than the macOS leg verified ($MACOS_SHA256)"
+            exit 1
           fi
-          git checkout -b "$BRANCH"
-          git add Formula/forge.rb
-          git commit -m "Update forge to ${VERSION}"
-          # A re-run for the same version replaces its branch rather than
-          # failing on a non-fast-forward push.
-          git push --force -u origin "$BRANCH"
-          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
-            echo "a pull request for ${BRANCH} is already open; its branch was updated"
-            exit 0
-          fi
-          gh pr create --base main \
-            --title "Update forge to ${VERSION}" \
-            --body "Automated update of the forge formula to ${VERSION}, rendered from the v${VERSION} release's checksums.txt by scripts/render-homebrew-formula.sh, and installed and tested on ubuntu-latest before this PR was opened."
+
+      - name: brew install and brew test (Linux)
+        run: .github/scripts/brew-verify.sh formula "${{ needs.resolve.outputs.version }}"
+
+      - name: Publish to main
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DEPLOY_KEY_CONFIGURED: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
+        run: .github/scripts/publish.sh formula "$VERSION" "forge $VERSION"
+
+  staleness:
+    needs: [resolve, verify-macos, publish]
+    if: always() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fail and raise an issue if the tap is behind forge's latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --quiet origin main
+          HAVE="$(.github/scripts/tap-version.sh formula origin/main || true)"
+          read -r LATEST PUBLISHED_AT < <(gh api repos/reliant-labs/forge/releases/latest --jq '"\(.tag_name) \(.published_at)"')
+          .github/scripts/staleness.sh forge "$HAVE" "${LATEST#v}" "$PUBLISHED_AT" "$STALE_AFTER_HOURS"
