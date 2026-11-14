@@ -1,9 +1,9 @@
 cask "reliant" do
   arch arm: "arm64", intel: "x64"
 
-  version "1.9.0"
-  sha256 arm:   "8de3a82f97adb847213d9a7793b9b0ebe0c002bdd596bcbd038b109dc4f8b4b7",
-         intel: "93a2a174f9a32e25de25b006dd1b48a6e2ec92d1ebbde3013aed200f31eb1773"
+  version "1.18.0"
+  sha256 arm:   "4aca0f709e406e28ebed9fc945a9326031cf6970d784aa7c383b6296de79cc5c",
+         intel: "043dc3b048227a70224074bbf8b4127e10dfce42c3a467095d701fb3af767ded"
 
   url "https://downloads.reliantlabs.io/Reliant-#{version}-mac-#{arch}.dmg"
   name "Reliant"
