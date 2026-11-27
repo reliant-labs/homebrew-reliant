@@ -10,23 +10,23 @@ class Forge < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/reliant-labs/forge/releases/download/v1.1.0/forge_darwin_arm64.tar.gz"
-      sha256 "d51b43e87d3f88be87e0322bd385bc109a24992f59700b5530d2a225d9c1fbc6"
+      url "https://github.com/reliant-labs/forge/releases/download/v1.13.0/forge_darwin_arm64.tar.gz"
+      sha256 "506445a0975e1bbb7216097ee7f0e209822078d996ee69d3cd4c2510c90e660e"
     end
     on_intel do
-      url "https://github.com/reliant-labs/forge/releases/download/v1.1.0/forge_darwin_amd64.tar.gz"
-      sha256 "1eef647f177a95ec4431aaafcef0460e00578ed2215e16fa6f0846f3da317fde"
+      url "https://github.com/reliant-labs/forge/releases/download/v1.13.0/forge_darwin_amd64.tar.gz"
+      sha256 "21850615121c11c066614bdccb24bdb1611d839ef80d976428fe6f61645d9c6c"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/reliant-labs/forge/releases/download/v1.1.0/forge_linux_arm64.tar.gz"
-      sha256 "cd8381e3368890fc25f2ac41d7cbe5b5cc31d4f0bd57eba96bc60289d4135fb4"
+      url "https://github.com/reliant-labs/forge/releases/download/v1.13.0/forge_linux_arm64.tar.gz"
+      sha256 "7a629ae8db9a5052cb94c6517b4ff411025921f9b6f671778feb695536c1edea"
     end
     on_intel do
-      url "https://github.com/reliant-labs/forge/releases/download/v1.1.0/forge_linux_amd64.tar.gz"
-      sha256 "8cb85764fb4b36cd9309df8ab2215b2048ebc236798f4ea6de554f4e97b11dc0"
+      url "https://github.com/reliant-labs/forge/releases/download/v1.13.0/forge_linux_amd64.tar.gz"
+      sha256 "d78ae0830822161f99c729b9c519f51cab3e5cbb40ea8a4b74c47991a7e60f05"
     end
   end
 
